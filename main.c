@@ -162,7 +162,10 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
     snprintf(autokstuff_src_path, sizeof(autokstuff_src_path), "/mnt/sandbox/%s/app0/autokstuff", sandbox_id);
     struct stat st;
     if (stat(autokstuff_src_path, &st) != 0) {
-        return;
+        snprintf(autokstuff_src_path, sizeof(autokstuff_src_path), "/data/autokstuff/%s", title_id);
+        if (stat(autokstuff_src_path, &st) != 0) {
+            return;
+        }
     }
 
     int delay = 0;
