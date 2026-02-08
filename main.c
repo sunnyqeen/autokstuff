@@ -14,6 +14,7 @@
 #include <sys/user.h>
 #include <sys/time.h>
 
+#define APP_VERSION "1.0"
 #define PAYLOAD_NAME "autokstuff.elf"
 
 typedef struct notify_request {
@@ -182,8 +183,8 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
         return;
     }
 
-	notify("Detected game %s. auto disable kstuff...", title_id);
-    printf("[INFO] Detected game %s (pid %d) in sandbox %s. auto disable kstuff...\n", title_id, child_pid, sandbox_id);
+    notify("%s is running, auto disable kstuff in %ds...", title_id, delay);
+    printf("[INFO] %s is running (pid %d) in sandbox %s, auto disable kstuff in %ds...\n", title_id, child_pid, sandbox_id, delay);
 
     process_game(option, child_pid, delay);
 }
@@ -223,7 +224,7 @@ int main() {
         return -1;
     }
 	
-	notify("autokstuff By SunnyQeen");
+	notify("autokstuff v" APP_VERSION " By SunnyQeen");
     printf("[INFO] Monitoring SceSysCore.elf (pid %d) for game launches...\n", syscore_pid);
 
     pid_t child_pid = -1;
