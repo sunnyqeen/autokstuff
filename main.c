@@ -14,7 +14,7 @@
 #include <sys/user.h>
 #include <sys/time.h>
 
-#define APP_VERSION "1.0"
+#define APP_VERSION "1.1"
 #define PAYLOAD_NAME "autokstuff.elf"
 
 typedef struct notify_request {
