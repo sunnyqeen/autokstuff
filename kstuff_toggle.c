@@ -148,6 +148,10 @@ kstuff_toggle(int option, int enable) {
 
   if(option == 1) {
     int is_disabled = kernel_getshort(sysentvec + 14) == 0xffff;
+    int is_enabled = kernel_getshort(sysentvec + 14) == 0xdeb7;
+    if (!is_disabled && !is_enabled) {
+      return -1;
+    }
     if(enable) {
       if(is_disabled) {
         kernel_setshort(sysentvec + 14, 0xdeb7);
@@ -161,6 +165,10 @@ kstuff_toggle(int option, int enable) {
     }
   } else if(option == 2) {
     int is_disabled = kernel_getshort(sysentvec_ps4 + 14) == 0xffff;
+    int is_enabled = kernel_getshort(sysentvec_ps4 + 14) == 0xdeb7;
+    if (!is_disabled && !is_enabled) {
+      return -1;
+    }
     if(enable) {
       if(is_disabled) {
         kernel_setshort(sysentvec_ps4 + 14, 0xdeb7);
