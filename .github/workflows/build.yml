@@ -23,20 +23,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Checkout SDK
+        uses: actions/checkout@v3
+        with:
+          repository: EchoStretch/sdk
+          path: sdk
+
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y build-essential clang-18 lld-18 xxd yasm nasm
 
-      - name: Install toolchain
+      - name: Setup SDK
+        working-directory: sdk
         run: |
-          wget https://github.com/ps5-payload-dev/pacbrew-repo/releases/latest/download/ps5-payload-dev.tar.gz
-          sudo tar xf ps5-payload-dev.tar.gz -C /
+          make DESTDIR=${{ runner.tool_cache }}/ps5-payload-sdk clean install
+          echo PS5_PAYLOAD_SDK=${{ runner.tool_cache }}/ps5-payload-sdk >> $GITHUB_ENV
 
       - name: Build Payload
         run: |
-          export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
-          /opt/ps5-payload-sdk/bin/prospero-cmake CMakeLists.txt
+          ${PS5_PAYLOAD_SDK}/bin/prospero-cmake CMakeLists.txt
           make
 
       - name: Upload Payload artifact
@@ -44,5 +50,26 @@ jobs:
         with:
           name: autokstuff
           path: |
-            ./autokstuff.elf
+            autokstuff.elf
           if-no-files-found: error
+
+  payload-release:
+    needs: payload-build
+    permissions:
+      contents: write
+
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: autokstuff
+          path: .
+
+      - name: Create GitHub Release (pre-release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: true
+          files: autokstuff.elf
