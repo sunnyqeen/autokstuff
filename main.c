@@ -14,7 +14,7 @@
 #include <sys/user.h>
 #include <sys/time.h>
 
-#define APP_VERSION "1.1"
+#define APP_VERSION "1.2"
 #define PAYLOAD_NAME "autokstuff.elf"
 
 typedef struct notify_request {
@@ -40,6 +40,190 @@ static void notify(const char* fmt, ...) {
     vsnprintf(req.message, sizeof(req.message) - 1, fmt, args);
     va_end(args);
     sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
+}
+
+// backpork
+#define IOVEC_ENTRY(x) {x ? (char *)x : 0, x ? strlen(x) + 1 : 0}
+#define IOVEC_SIZE(x) (sizeof(x) / sizeof(struct iovec))
+
+static int cleanup_directory(const char *path) {
+    DIR *d = opendir(path);
+    if (!d) {
+        return -1;
+    }
+
+    int result = 0;
+    struct dirent *entry;
+
+    while ((entry = readdir(d)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char full_path[PATH_MAX];
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        if (path_len < 0 || path_len >= sizeof(full_path)) {
+            result = -1;
+            break;
+        }
+
+        struct stat st;
+        if (stat(full_path, &st) != 0) {
+            result = -1;
+            break;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            if (cleanup_directory(full_path) != 0) {
+                result = -1;
+                break;
+            }
+        }
+        // Skip files (don't delete them)
+    }
+
+    closedir(d);
+
+    if (result == 0) {
+        result = rmdir(path);
+    }
+
+    return result;
+}
+
+static int mount2(const char *src, const char *dst, const char *type) {
+    struct iovec iov[] = {
+        IOVEC_ENTRY("fstype"),
+        IOVEC_ENTRY(type),
+        IOVEC_ENTRY("from"),
+        IOVEC_ENTRY(src),
+        IOVEC_ENTRY("fspath"),
+        IOVEC_ENTRY(dst),
+    };
+
+    return nmount(iov, IOVEC_SIZE(iov), 0);
+}
+
+
+static char *mount_fakelibs(const char *sandbox_id, const char *fake_path, pid_t pid, char *random_folder) {
+    struct stat st;
+    if (stat(fake_path, &st) != 0) {
+        printf("[WARNING] stat on %s failed (errno: %d, %s)\n", fake_path, errno, strerror(errno));
+        return NULL;
+    }
+
+    char *fake_mount_path = (char *)malloc(PATH_MAX + 1);
+    if (!fake_mount_path) {
+        return NULL;
+    }
+
+    snprintf(fake_mount_path, PATH_MAX + 1, "/mnt/sandbox/%s/%s/common/lib", sandbox_id, random_folder);
+
+    int res = mount2(fake_path, fake_mount_path, "unionfs");
+    if (res != 0) {
+        printf("[WARNING] mount_unionfs failed: %d (errno: %d, %s)\n", res, errno, strerror(errno));
+        unmount(fake_mount_path, MNT_FORCE);
+        free(fake_mount_path);
+        return NULL;
+    }
+
+    printf("[INFO] Mounted fakelibs from %s to %s\n", fake_path, fake_mount_path);
+    return fake_mount_path;
+}
+
+static void cleanup_game(pid_t pid, const char *sandbox_id, char *fake_mount_path) {
+    // Wait for sandbox to be cleaned up by the system
+    char sandbox_app0[PATH_MAX];
+    snprintf(sandbox_app0, sizeof(sandbox_app0), "/mnt/sandbox/%s/app0", sandbox_id);
+    printf("[INFO] Waiting for sandbox cleanup: %s\n", sandbox_app0);
+
+    int wait_count = 0;
+    struct stat sandbox_st;
+    while (stat(sandbox_app0, &sandbox_st) == 0 && wait_count < 30) {
+        sleep(1);
+        wait_count++;
+        if (wait_count % 5 == 0) {
+            printf("[DEBUG] Still waiting for sandbox cleanup... (%d seconds)\n", wait_count);
+        }
+    }
+
+    if (stat(sandbox_app0, &sandbox_st) == 0) {
+        printf("[WARNING] Sandbox still exists after 30 seconds, proceeding anyway\n");
+    } else {
+        printf("[INFO] Sandbox cleaned up after %d seconds\n", wait_count);
+    }
+
+    // Unmount the fakelibs
+    printf("[INFO] Unmounting %s\n", fake_mount_path);
+    unmount(fake_mount_path, 0);
+
+    // Remove the entire sandbox directory
+    char sandbox_dir[PATH_MAX];
+    snprintf(sandbox_dir, sizeof(sandbox_dir), "/mnt/sandbox/%s", sandbox_id);
+    printf("[INFO] Removing directory %s\n", sandbox_dir);
+    if (cleanup_directory(sandbox_dir) == 0) {
+        notify("Backport directory removed successfully.");
+        printf("[INFO] Backport directory removed successfully\n");
+    } else {
+        printf("[WARNING] Failed to remove directory: %s\n", strerror(errno));
+    }
+
+    free(fake_mount_path);
+    printf("[INFO] Cleanup finished.\n");
+}
+
+static char* find_random_folder(const char* sandbox_id) {
+    char base_path[PATH_MAX];
+    snprintf(base_path, sizeof(base_path), "/mnt/sandbox/%s", sandbox_id);
+
+    DIR* dir = opendir(base_path);
+    if (!dir) {
+        printf("[WARNING] Failed to open directory: %s\n", base_path);
+        return NULL;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
+        char full_path[PATH_MAX];
+        snprintf(full_path, sizeof(full_path), "%s/%s/common/lib", base_path, entry->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            closedir(dir);
+            printf("[DEBUG] Found random folder: %s in sandbox %s\n", entry->d_name, sandbox_id);
+            return strdup(entry->d_name);
+        }
+    }
+
+    closedir(dir);
+    printf("[WARNING] No random folder found in %s\n", base_path);
+    return NULL;
+}
+
+static char* backport(int child_pid, const char* title_id, const char* fake_path, const char* sandbox_id) {
+    // Find random folder
+    char* random_folder = find_random_folder(sandbox_id);
+    if (!random_folder) {
+        printf("[WARNING] Failed to find random folder for %s\n", title_id);
+        return NULL;
+    }
+
+    notify("%s is running, backporting...", title_id);
+    printf("[INFO] %s is running (pid %d) in sandbox %s, backporting...\n", title_id, child_pid, sandbox_id);
+
+    char* fake_mount_path = mount_fakelibs(sandbox_id, fake_path, child_pid, random_folder);
+
+    if (fake_mount_path) {
+        notify("Backport successful");
+        printf("[INFO] Backport successful\n");
+    }
+
+    free(random_folder);
+    return fake_mount_path;
 }
 
 // from john-tornblom
@@ -116,7 +300,7 @@ static void process_game(int option, pid_t pid, int delay) {
             break;
         }
 
-        if (nev == 0) {
+        if (nev == 0 && delay > 0) {
           if(counter >= 0 && ++counter == delay) {
             kstuff_toggle(option, 0);
             counter = -1;
@@ -125,7 +309,9 @@ static void process_game(int option, pid_t pid, int delay) {
     }
 
     close(kq);
-    kstuff_toggle(option, 1);
+    if (delay > 0) {
+        kstuff_toggle(option, 1);
+    }
 }
 
 static int find_highest_sandbox_number(const char* title_id) {
@@ -147,6 +333,9 @@ static int find_highest_sandbox_number(const char* title_id) {
 }
 
 static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id) {
+    int do_kstuff_toggle = 1;
+    int do_backport = 1;
+
     // Find highest sandbox number
     int sandbox_num = find_highest_sandbox_number(title_id);
     if (sandbox_num == -1) {
@@ -165,7 +354,7 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
     if (stat(autokstuff_src_path, &st) != 0) {
         snprintf(autokstuff_src_path, sizeof(autokstuff_src_path), "/data/autokstuff/%s", title_id);
         if (stat(autokstuff_src_path, &st) != 0) {
-            return;
+            do_kstuff_toggle = 0;
         }
     }
 
@@ -180,13 +369,42 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
       close(fd);
     }
     if (delay <= 0) {
-        return;
+        do_kstuff_toggle = 0;
     }
 
-    notify("%s is running, auto disable kstuff in %ds...", title_id, delay);
-    printf("[INFO] %s is running (pid %d) in sandbox %s, auto disable kstuff in %ds...\n", title_id, child_pid, sandbox_id, delay);
+    // Check if fakelib exists
+    char fakelib_src_path[PATH_MAX];
+    snprintf(fakelib_src_path, sizeof(fakelib_src_path), "/mnt/sandbox/%s/app0/fakelib", sandbox_id);
+    if (stat(fakelib_src_path, &st) != 0) {
+        snprintf(fakelib_src_path, sizeof(fakelib_src_path), "/data/autokstuff/fakelib/%s", title_id);
+        if (stat(fakelib_src_path, &st) != 0) {
+            do_backport = 0;
+        }
+    }
 
-    process_game(option, child_pid, delay);
+    // Check if backport disabled
+    if (stat("/data/autokstuff/backport.off", &st) == 0) {
+        do_backport = 0;
+    }
+
+    char* fake_mount_path = NULL;
+
+    if (do_backport) {
+        fake_mount_path = backport(child_pid, title_id, fakelib_src_path, sandbox_id);
+    }
+
+    if (do_kstuff_toggle) {
+        notify("%s is running, auto disable kstuff in %ds...", title_id, delay);
+        printf("[INFO] %s is running (pid %d) in sandbox %s, auto disable kstuff in %ds...\n", title_id, child_pid, sandbox_id, delay);
+    }
+
+    if (do_kstuff_toggle || do_backport) {
+        process_game(option, child_pid, delay);
+    }
+
+    if (do_backport && fake_mount_path) {
+        cleanup_game(child_pid, sandbox_id, fake_mount_path);
+    }
 }
 
 int main() {
@@ -223,8 +441,8 @@ int main() {
         close(kq);
         return -1;
     }
-	
-	notify("autokstuff v" APP_VERSION " By SunnyQeen");
+
+    notify("autokstuff v" APP_VERSION " By SunnyQeen");
     printf("[INFO] Monitoring SceSysCore.elf (pid %d) for game launches...\n", syscore_pid);
 
     pid_t child_pid = -1;
