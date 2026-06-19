@@ -386,6 +386,13 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
     if (stat("/data/autokstuff/backport.off", &st) == 0) {
         do_backport = 0;
     }
+    if (do_backport) {
+        char fakelib_off_path[PATH_MAX];
+        snprintf(fakelib_off_path, sizeof(fakelib_off_path), "/data/autokstuff/fakelib/%s.off", title_id);
+        if (stat(fakelib_off_path, &st) == 0) {
+            do_backport = 0;
+        }
+    }
 
     char* fake_mount_path = NULL;
 

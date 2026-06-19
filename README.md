@@ -25,7 +25,8 @@ Automatically pause Kstuff when running homebrew games on your PS5 using the Kst
    then copy all files from `fakelib` to the new folder.\
    \
    To disable `BackPork` function.\
-   Create new empty file `/data/autokstuff/backport.off`.\
+   Create new empty file `/data/autokstuff/backport.off`to disable for all.\
+   Or `/data/autokstuff/fakelib/PPSA12345.off` to disable for the target title id.\
    \
    Thanks\
        `https://github.com/EchoStretch/kstuff-toggle`\
