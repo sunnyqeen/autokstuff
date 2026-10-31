@@ -162,9 +162,10 @@ static void cleanup_game(pid_t pid, const char *sandbox_id, char *fake_mount_pat
     snprintf(sandbox_dir, sizeof(sandbox_dir), "/mnt/sandbox/%s", sandbox_id);
     printf("[INFO] Removing directory %s\n", sandbox_dir);
     if (cleanup_directory(sandbox_dir) == 0) {
-        notify("Backport directory removed successfully.");
+        //notify("Backport directory removed successfully.");
         printf("[INFO] Backport directory removed successfully\n");
     } else {
+        notify("Backport directory failed to remove");
         printf("[WARNING] Failed to remove directory: %s\n", strerror(errno));
     }
 
