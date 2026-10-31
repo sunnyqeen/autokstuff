@@ -213,7 +213,8 @@ static char* backport(int child_pid, const char* title_id, const char* fake_path
         return NULL;
     }
 
-    notify("%s is running, backporting...", title_id);
+    notify("%s is running, backporting from %s...", title_id,
+           strncmp(fake_path, "/data/", 6) ? "game sandbox" : "user data");
     printf("[INFO] %s is running (pid %d) in sandbox %s, backporting...\n", title_id, child_pid, sandbox_id);
 
     char* fake_mount_path = mount_fakelibs(sandbox_id, fake_path, child_pid, random_folder);
