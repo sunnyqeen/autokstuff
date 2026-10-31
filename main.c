@@ -372,24 +372,40 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
         do_kstuff_toggle = 0;
     }
 
-    // Check if fakelib exists
+    // Locate fakelib. Default order: sandbox, then /data.
+    // If <title_id>.override exists, the order is reversed.
     char fakelib_src_path[PATH_MAX];
-    snprintf(fakelib_src_path, sizeof(fakelib_src_path), "/mnt/sandbox/%s/app0/fakelib", sandbox_id);
-    if (stat(fakelib_src_path, &st) != 0) {
-        snprintf(fakelib_src_path, sizeof(fakelib_src_path), "/data/autokstuff/fakelib/%s", title_id);
-        if (stat(fakelib_src_path, &st) != 0) {
-            do_backport = 0;
-        }
-    }
 
-    // Check if backport disabled
+    // Disable switches check
     if (stat("/data/autokstuff/backport.off", &st) == 0) {
         do_backport = 0;
     }
     if (do_backport) {
-        char fakelib_off_path[PATH_MAX];
-        snprintf(fakelib_off_path, sizeof(fakelib_off_path), "/data/autokstuff/fakelib/%s.off", title_id);
-        if (stat(fakelib_off_path, &st) == 0) {
+        snprintf(fakelib_src_path, sizeof(fakelib_src_path),
+                 "/data/autokstuff/fakelib/%s.off", title_id);
+        if (stat(fakelib_src_path, &st) == 0) {
+            do_backport = 0;
+        }
+    }
+
+    // Locate fakelib. Default order: sandbox, then /data.
+    // If <title_id>.override exists, the order is reversed.
+    if (do_backport) {
+        snprintf(fakelib_src_path, sizeof(fakelib_src_path),
+                 "/data/autokstuff/fakelib/%s.override", title_id);
+        int data_first = (stat(fakelib_src_path, &st) == 0);
+
+        int found = 0;
+        for (int i = 0; i < 2 && !found; i++) {
+            if ((i == 0) == data_first)
+                snprintf(fakelib_src_path, sizeof(fakelib_src_path),
+                         "/data/autokstuff/fakelib/%s", title_id);
+            else
+                snprintf(fakelib_src_path, sizeof(fakelib_src_path),
+                         "/mnt/sandbox/%s/app0/fakelib", sandbox_id);
+            found = (stat(fakelib_src_path, &st) == 0);
+        }
+        if (!found) {
             do_backport = 0;
         }
     }
