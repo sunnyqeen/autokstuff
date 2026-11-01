@@ -374,8 +374,6 @@ static void kstuff_toggle_game(int option, pid_t child_pid, const char *title_id
         do_kstuff_toggle = 0;
     }
 
-    // Locate fakelib. Default order: sandbox, then /data.
-    // If <title_id>.override exists, the order is reversed.
     char fakelib_src_path[PATH_MAX];
 
     // Disable switches check

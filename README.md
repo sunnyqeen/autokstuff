@@ -13,7 +13,7 @@ Automatically pause Kstuff when running homebrew games on your PS5 using the Kst
    \
    For PS4 fpkg game\
    You can also create a file named by title id in `/data/autokstuff/`.\
-   For example `/data/autokstuff/PPSA12345`\
+   For example `/data/autokstuff/PPSA12345`
 
 ### Auto backport
 
