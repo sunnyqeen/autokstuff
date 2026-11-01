@@ -145,8 +145,15 @@ kstuff_toggle(int option, int enable) {
 
   case 0x13000000:
   case 0x13200000:
-    sysentvec     = KERNEL_ADDRESS_DATA_BASE + 0xddd8a8;
-    sysentvec_ps4 = KERNEL_ADDRESS_DATA_BASE + 0xddda20;
+    sysentvec     = KERNEL_ADDRESS_DATA_BASE + 0xddd8b8;
+    sysentvec_ps4 = KERNEL_ADDRESS_DATA_BASE + 0xddda30;
+    break;
+
+  case 0x13400000:
+  case 0x13420000:
+  case 0x13600000:
+    sysentvec     = KERNEL_ADDRESS_DATA_BASE + 0xddd8f8;
+    sysentvec_ps4 = KERNEL_ADDRESS_DATA_BASE + 0xddda70;
     break;
 
   default:
